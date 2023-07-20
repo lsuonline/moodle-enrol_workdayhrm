@@ -122,7 +122,11 @@ class enrol_workdayhrm_plugin extends enrol_plugin {
             $enrollstatus = $wdemployee->current == 1 ? 'enroll' : 'unenroll';
             foreach ($courses as $course) {
                 workdayhrm::dtrace("        $enrollstatus" . "ing $muser->username into $course->shortname.");
-                $enroll = workdayhrm::workdayhrm_enrollment($s, $course, $muser, $enrollstatus);
+                if (!isset($muser->notreallyhere)) {
+                    $enroll = workdayhrm::workdayhrm_enrollment($s, $course, $muser, $enrollstatus);
+                } else {
+                    mtrace("Skipping enrollment for duplicate user $muser->firstname $muser->lastname.");
+                }
                 workdayhrm::dtrace("        $enrollstatus" . "ed $muser->username into $course->shortname.");
             }
             mtrace("      Finished HRM enrollments for $wdemployee->legal_first_name $wdemployee->legal_last_name.");

@@ -41,8 +41,6 @@ class workdayhrm {
 
         // Get the settings.
         $s = get_config('enrol_workdayhrm');
-//        $s->coursefield = 'idnumber';
-//        $s->courseprefix = 'HRM_';
 
         return $s;
     }
@@ -64,8 +62,6 @@ class workdayhrm {
         $sql = 'SELECT *
                   FROM ' . $table . '
                 WHERE id IN ( ' . $s->courseids . ' )';
-//                WHERE ' . $s->coursefield . '
-//                  LIKE "' . $s->courseprefix . '%"';
 
         // Get the list of courses.
         $courses = $DB->get_records_sql($sql);
@@ -410,6 +406,9 @@ class workdayhrm {
     public static function update_wdhrm_employee($record, $employee) {
         global $DB;
 
+        $schoolid = isset($employee->LSUAM_LSU_ID) ? $employee->LSUAM_LSU_ID : null;
+        $manschoolid = isset($employee->Manager_LSU_ID) ? $employee->Manager_LSU_ID : null;
+
         // Update the existing record.
         $record->employee_id = $employee->Employee_ID;
         $record->universal_id = isset($employee->Universal_ID) ? $employee->Universal_ID : null;
@@ -428,6 +427,9 @@ class workdayhrm {
         $record->manager_employee_id = isset($employee->Manager_Employee_ID) ? $employee->Manager_Employee_ID : null;
         $record->manager_universal_id = isset($employee->Manager_Universal_ID) ? $employee->Manager_Universal_ID : null;
         $record->manager_school_id = isset($employee->Manager_LSU_ID) ? $employee->Manager_LSU_ID : null;
+        if (!is_null($manschoolid)) {
+            $record->manager_school_id = self::fix_wdhrm_schoolid($manschoolid);
+        }
         $record->current = 1;
         $record->lastupdated = time();
         unset($record->message);
@@ -469,6 +471,7 @@ class workdayhrm {
         // Define table for lookup later.
         $table = 'enrol_workdayhrm';
         $schoolid = isset($employee->LSUAM_LSU_ID) ? $employee->LSUAM_LSU_ID : null;
+        $manschoolid = isset($employee->Manager_LSU_ID) ? $employee->Manager_LSU_ID : null;
 
         // Map the data because I hate school specific tags.
         $record->employee_id = $employee->Employee_ID;
@@ -488,11 +491,23 @@ class workdayhrm {
         $record->manager_employee_id = isset($employee->Manager_Employee_ID) ? $employee->Manager_Employee_ID : null;
         $record->manager_universal_id = isset($employee->Manager_Universal_ID) ? $employee->Manager_Universal_ID : null;
         $record->manager_school_id = isset($employee->Manager_LSU_ID) ? $employee->Manager_LSU_ID : null;
+        if (!is_null($manschoolid)) {
+            $record->manager_school_id = self::fix_wdhrm_schoolid($manschoolid);
+        }
         $record->current = 1;
         $record->lastupdated = time();
 
         // Insert the record and return the id.
+        try {
         $id = $DB->insert_record($table, $record, $returnid=true);
+        } catch(Exception $e) {
+            $error = $e->getMessage();
+        }
+        if (isset($error)) {
+var_dump($error);
+die();
+        }
+
         $record->id = $id;
 
         // Return the id.
@@ -666,8 +681,9 @@ class workdayhrm {
             }
             return $exists;
         } else if ($exists->message == 'new') {
+            self::dtrace("      Inserting new employee $employee->Employee_ID: $employee->Legal_First_Name $employee->Legal_Last_Name with $ecount fields.");
             $insert = self::insert_wdhrm_employee($s, $employee);
-            mtrace("      Inserted new employee $employee->Employee_ID: $employee->Legal_First_Name $employee->Legal_Last_Name id $insert with $ecount fields.");
+            mtrace("      Inserted new employee $employee->Employee_ID: $employee->Legal_First_Name $employee->Legal_Last_Name id $insert->id with $ecount fields.");
             return ($insert);
         } else {
             mtrace("      Error - No identifying fields found for user $employee->Legal_First_Name $employee->Legal_Last_Name.");
@@ -677,7 +693,6 @@ class workdayhrm {
     public static function get_clean_employees() {
         global $DB;
         $table = 'enrol_workdayhrm';
-        //$conditions = array('id' => '3749');
         $conditions = null;
         $wdemployees = $DB->get_records($table, $conditions, $sort='', $fields='*', $limitfrom=0, $limitnum=0);
         return $wdemployees;
@@ -693,7 +708,7 @@ class workdayhrm {
 
    public static function capit($s) {
         $charcount = strlen($s);
-        if ($charcount > 1 && $s === strtoupper($s)) {
+        if ($charcount > 1 && ($s === strtoupper($s) || $s === strtolower($s))) {
             $words = array();
             // Split the string into an array of words using dashes as boundaries.
             if (preg_grep('/-/', array($s))) {
@@ -780,17 +795,28 @@ class workdayhrm {
                 break;
             }
         }
-        if (!isset($muser->id)) {
+        if (!isset($muser->id) && !isset($muser->notreallyhere)) {
             self::dtrace("      We did not find a matching Moodle employee for email or username: $student->work_email, idnumber: $student->school_id. let's create them.");
             $muser = self::create_moodle_user($user);
-        } else if ($muser->username == $user->username
+        } else if (isset($muser->id) && isset($muser->notreallyhere)
+                   && $muser->username == $user->username
                    && $muser->email == $user->email
                    && $muser->idnumber == $user->idnumber
                    && $muser->lastname == $user->lastname) {
             self::dtrace("      We found a perfect match for $muser->firstname $muser->lastname with email $muser->email and idnumber $muser->idnumber and Moodle id $muser->id = moving on.");
-        } else {
+        } else if (!isset($muser->notreallyhere)) {
             self::dtrace("      We found a match with Moodle user: $muser->id, but user information differs, updating the target Moodle user.");
+
+            // Set the userid.
             $user->id = $muser->id;
+
+            // Store the firstname in a temp location.
+            $user->tempname = $user->firstname;
+
+            // Unset the firstname
+            unset($user->firstname);
+            
+            // Set the user table.
             $table = 'user';
             try {
                 $update = $DB->update_record($table, $user, $bulk=false);
@@ -798,13 +824,21 @@ class workdayhrm {
             catch(Exception $e) {
                 $error = $e->getMessage();
             }
+
+            // Reset the firstname.
+            $user->firstname = $user->tempname;
+
+            // Unset the tempname.
+            unset($user->tempname);
             if ($update) {
                 mtrace("      Updated $user->firstname $user->lastname's information");
-                self::dtrace("      Beginning any enrollments for $wdemployee->legal_first_name $wdemployee->legal_last_name.");
+                self::dtrace("      Beginning any enrollments for $user->firstname $user->lastname.");
                 $muser = $DB->get_record($table, array("id"=>$user->id), $fields='*', $strictness=IGNORE_MISSING);
             } else {
                 mtrace("      Updating $user->firstname $user->lastname failed with error $error.");
             }
+        } else {
+                mtrace("      This was a duplicate record. We skipped it.");
         }
         return $muser;
     }
@@ -825,19 +859,20 @@ class workdayhrm {
     public static function get_matching_employee($condition) {
         global $DB;
         $table = 'user';
+        $cdata = json_encode($condition);
         $musers = $DB->get_records($table, $condition, $sort='', $fields='*', $limitfrom=0, $limitnum=0);
         $musercount = count($musers);
         if ($musercount > 1) {
             foreach ($musers as $muser) {
-                self::dtrace("We found more than one matching Moodle user.
+                mtrace("We found more than one matching Moodle user.
                         Stopping the update of $muser->firstname, $muser->lastname,
                         id: $muser->id,
                         email: $muser->email,
                         username: $muser->username,
                         idnumber: $muser->idnumber.");
             }
-            // In order to avoid merge issues, die here.
-            die();
+            mtrace("Search condition: $cdata");
+            $muser->notreallyhere = 1;
         } else if (is_array($musers)) {
             $muser = reset($musers);
         } else {
