@@ -44,6 +44,10 @@ $string['workdayhrm_suspend_unenroll'] = 'Unenroll or Suspend';
 $string['workdayhrm_suspend_unenroll_help'] = 'Unenroll or suspend students.';
 $string['workdayhrm_contacts'] = 'Email Contacts';
 $string['workdayhrm_contacts_help'] = 'Comma separated list of Moodle usernames you wish to email statuses and errors.';
+$string['homedomain'] = 'Home Domain';
+$string['homedomain_desc'] = 'Your OAuth2 home domain. These emails will not be converted to #ext# usernames.';
+$string['extdomain'] = 'External Domain';
+$string['extdomain_desc'] = 'Your OAuth2 external domain used by your authentication source.';
 $string['workdayhrm_courseids'] = 'HRM Courses';
 $string['workdayhrm_courseids_help'] = 'Comma separated list of Moodle courseids you wish to populate with staff members.';
 

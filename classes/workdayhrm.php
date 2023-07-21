@@ -338,7 +338,6 @@ class workdayhrm {
         global $DB;
 
         // Find the keys for the bad email addresses as defined in settings.
-        //TODO: Define in settings!!!!
         $bademails = isset($s->bademails) ? $s->bademails : 'unknown@lsu.edu,retemploDNU*@lsu.edu';
 
         // Create an array from the csv settings.
@@ -750,17 +749,15 @@ die();
      * Creates or updates users as needed.
      *
      * @param  @object $employee
+     * @param  @object $s
      * @return @object $muser
      */
-    public static function create_update_user($student) {
+    public static function create_update_user($student, $s) {
         global $CFG, $DB;
 
         // Build the auth methods and choose the default one.
         $auth = explode(',', $CFG->auth);
         $auth = reset($auth);
-
-        // TODO: deal with this somehow.
-        $auth = 'oauth2';
 
         // Set up the user object.
         $user               = new stdClass();
@@ -777,35 +774,99 @@ die();
         $user->timemodified = time();
         $user->mnethostid   = $CFG->mnet_localhost_id;
 
+        // Get the configured home domain.
+        $homedomain = strtolower($s->homedomain);
+
+        // Get the configured external domain.
+        $extdomain = strtolower($s->extdomain);
+
+        // Isolate the domain.
+        $inputdomain = strtolower(substr(strrchr($student->work_email, "@"), 0));
+
+        // perform the logic.
+        if ($inputdomain == $homedomain) {
+            // Set the username to lowercase email.
+            $username = strtolower($student->work_email);
+        } else {
+            // Build the new username (lowercase it in case the admin is a moron).
+            $username = strtolower(str_replace('@', '_', $student->work_email) . '#ext#' . $extdomain);
+        }
+
         // Build the conditions to get some users.
         $conditions = array();
-        $econdition  = array("email"=>$student->work_email, "mnethostid"=>1, "deleted"=>0, "confirmed"=>1, "suspended"=>0);
-        $conditions[] = array("email"=>$student->work_email, "mnethostid"=>1, "deleted"=>0, "confirmed"=>1, "suspended"=>0);
         $conditions[] = array("idnumber"=>$student->school_id, "mnethostid"=>1, "deleted"=>0, "confirmed"=>1, "suspended"=>0);
-        $conditions[] = array("username"=>$student->work_email, "mnethostid"=>1, "deleted"=>0, "confirmed"=>1, "suspended"=>0);
+        $conditions[] = array("username"=>$user->username, "mnethostid"=>1, "deleted"=>0, "confirmed"=>1, "suspended"=>0);
+        $conditions[] = array("username"=>$username, "mnethostid"=>1, "deleted"=>0, "confirmed"=>1, "suspended"=>0);
+        $conditions[] = array("email"=>$user->email, "mnethostid"=>1, "deleted"=>0, "confirmed"=>1, "suspended"=>0);
 
         $muser = new stdClass();
         $counter = 0;
         foreach ($conditions as $condition) {
+            // Increment the counter.
             $counter++;
+
             self::dtrace(      $counter . ': ' . json_encode($condition));
+
+            // Get the Moodle user.
             $muser = self::get_matching_employee($condition);
             if (isset($muser->id)) {
                 self::dtrace("      We found the matching employee id: $muser->id, email: $muser->email, idnumber: $muser->idnumber, username: $muser->username.");
+
+                // Get the search condition and value for logs.
+                $conkeys = array_keys($condition);
+                $convals = array_values($condition);
+                $searchcon = array_shift($conkeys);
+                $searchval = array_shift($convals);
+
+                // I want to break free.
                 break;
             }
         }
+
+        // We don't have a nonexistent user or an existing user.
         if (!isset($muser->id) && !isset($muser->notreallyhere)) {
-            self::dtrace("      We did not find a matching Moodle employee for email or username: $student->work_email, idnumber: $student->school_id. let's create them.");
+            self::dtrace("      We did not find a matching Moodle employee for email or username: $user->email or $username, idnumber: $student->school_id. let's create them.");
             $muser = self::create_moodle_user($user);
-        } else if (isset($muser->id) && isset($muser->notreallyhere)
-                   && $muser->username == $user->username
-                   && $muser->email == $user->email
+        // We have a perfect matching user who should exist.
+        } else if (isset($muser->id) && !isset($muser->notreallyhere)
                    && $muser->idnumber == $user->idnumber
+                   && $muser->email == $user->email
+                   && ($muser->username == $user->username
+                      || $muser->username == $username)
                    && $muser->lastname == $user->lastname) {
-            self::dtrace("      We found a perfect match for $muser->firstname $muser->lastname with email $muser->email and idnumber $muser->idnumber and Moodle id $muser->id = moving on.");
+            self::dtrace("      We found a perfect match for " .
+                                "$muser->firstname " .
+                                "$muser->lastname with email " .
+                                "$muser->email and idnumber " .
+                                "$muser->idnumber and Moodle id " .
+                                "$muser->id using " .
+                                "$searchcon matching " .
+                                "$searchval, moving on.");
+        // We have a perfect matching user but they sould not exist (we should never be here).
+        } else if (isset($muser->id) && isset($muser->notreallyhere)
+                   && $muser->idnumber == $user->idnumber
+                   && $muser->email == $user->email
+                   && ($muser->username == $user->username
+                      || $muser->username == $username)
+                   && $muser->lastname == $user->lastname) {
+            self::dtrace("      We found a perfect match for " .
+                                "$muser->firstname " .
+                                "$muser->lastname with email " .
+                                "$muser->email and idnumber " .
+                                "$muser->idnumber and Moodle id " .
+                                "$muser->id using " .
+                                "$searchcon matching " .
+                                "$searchval, but they should not exist.");
+        // We have a partial matching user who should exist.
         } else if (!isset($muser->notreallyhere)) {
-            self::dtrace("      We found a match with Moodle user: $muser->id, but user information differs, updating the target Moodle user.");
+            self::dtrace("      We found a partial match for first name " .
+                                "$muser->firstname / $user->firstname and last name " .
+                                "$muser->lastname / $user->lastname with email " .
+                                "$muser->email / $user->email and/or idnumber " .
+                                "$muser->idnumber / $user->idnumber and Moodle id " .
+                                "$muser->id using " .
+                                "$searchcon matching " .
+                                "$searchval, updating them.");
 
             // Set the userid.
             $user->id = $muser->id;
@@ -822,6 +883,7 @@ die();
                 $update = $DB->update_record($table, $user, $bulk=false);
             }
             catch(Exception $e) {
+                $update = false;
                 $error = $e->getMessage();
             }
 
@@ -840,6 +902,7 @@ die();
         } else {
                 mtrace("      This was a duplicate record. We skipped it.");
         }
+
         return $muser;
     }
 

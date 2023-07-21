@@ -114,4 +114,24 @@ if ($ADMIN->fulltree) {
             '', PARAM_TEXT
         )
     );
+
+    // Set the home domain.
+    $settings->add(
+        new admin_setting_configtext(
+            'enrol_workdayhrm/homedomain',
+            get_string('homedomain', 'enrol_workdayhrm'),
+            get_string('homedomain_desc', 'enrol_workdayhrm'),
+            '@lsu.edu'
+        )
+    );
+
+    // Set the remote domain.
+    $settings->add(
+        new admin_setting_configtext(
+            'enrol_workdayhrm/extdomain',
+            get_string('extdomain', 'enrol_workdayhrm'),
+            get_string('extdomain_desc', 'enrol_workdayhrm'),
+            'admin'
+        )
+    );
 }

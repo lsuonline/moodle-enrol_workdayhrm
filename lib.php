@@ -116,7 +116,7 @@ class enrol_workdayhrm_plugin extends enrol_plugin {
         $wdemployees = workdayhrm::get_clean_employees();
         foreach ($wdemployees as $wdemployee) {
             workdayhrm::dtrace("    Checking to see if $wdemployee->legal_first_name $wdemployee->legal_last_name has a Moodle account.");
-            $muser = workdayhrm::create_update_user($wdemployee);
+            $muser = workdayhrm::create_update_user($wdemployee, $s);
             workdayhrm::dtrace("    Finished checking to see if $wdemployee->legal_first_name $wdemployee->legal_last_name has a Moodle account.");
             workdayhrm::dtrace("      Beginning any enrollments for $wdemployee->legal_first_name $wdemployee->legal_last_name.");
             $enrollstatus = $wdemployee->current == 1 ? 'enroll' : 'unenroll';
@@ -168,8 +168,6 @@ class enrol_workdayhrm_plugin extends enrol_plugin {
         foreach ($usernames as $username) {
             $users[] = $DB->get_records('user', array('username' => $username));
         }
-
-        var_dump($users);
 
         // Email these users the workdayhrm log.
         $this->email_workdayhrm_report_to_users($users, $starttime, $log);
